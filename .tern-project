@@ -1,0 +1,26 @@
+{
+  "ecmaVersion": "7",
+  "libs": [
+    "browser"
+  ],
+  "loadEagerly": [
+    "~/ada/projects/mode-7/vendor/*.js",
+    "~/ada/projects/mode-7/js/*.js"
+  ],
+  "dontLoad": [
+    "node_modules/**"
+  ],
+  "plugins": {
+    "doc_comment": true,
+    "complete_strings": {
+      "maxLength": 15
+    },
+    "modules": {
+      "dontLoad": "",
+      "load": "",
+      "modules": ""
+    },
+    "es_modules": {},
+    "commonjs": {}
+  }
+}

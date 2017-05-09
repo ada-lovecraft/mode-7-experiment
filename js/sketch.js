@@ -1,19 +1,59 @@
-const RES = {width: 256, height: 256}
-const SRC = "images/grid.jpg"
+const REZ = {
+  width: 256,
+  height: 256
+}
+const SRC = 'images/map.png'
 const COLOR_CHANNELS = 4
-const {cos,sin, PI} = Math
+const {
+  cos,
+  sin,
+  PI
+} = Math
 const TWO_PI = PI * 2
 const RADIANS = PI / 180
+const STEP_SPEED = 30
+const raf = window.requestAnimationFrame
+const rad = d => d * RADIANS
+const deg = r => r / RADIANS
+const keys = new KeytarHero()
+const {
+  UP,
+  DOWN,
+  LEFT,
+  RIGHT,
+  W,
+  A,
+  S,
+  D,
+  EQUAL,
+  DASH,
+  OPENBRACKET,
+  CLOSEBRACKET
+} = KeytarHero.Keys
 
-var ZoomFactor = 1
+var ZoomFactor = 2.0
 var ShearFactor = 2
+var Origin = [2092, 264]
+
+var Offset = [REZ.width * 0.5, REZ.height * 0.5]
+
+var Horizon = 20
+var FOV = 100
+var Degrees = 90
+var SteeringMod = rad(-90)
 
 let frameCount = 0
 
-const raf = window.requestAnimationFrame
-const rad = (d) => d * RADIANS
+const crayons = {
+  black: pixelbutler.rgb(0, 0, 0),
+  magenta: pixelbutler.rgb(255, 0, 255),
+  indigo: pixelbutler.rgb(128, 128, 255),
+  cyan: pixelbutler.rgb(0, 255, 255),
+  yellow: pixelbutler.rgb(255, 255, 0)
+}
 
-class PixelData { // Handy ImageData Interface
+class PixelData {
+  // Handy ImageData Interface
   constructor(imageData, colorChannels = 4) {
     this._imageData = imageData
     this.colorChannels = colorChannels
@@ -25,22 +65,13 @@ class PixelData { // Handy ImageData Interface
     return this._imageData.height
   }
   at(x, y) {
-    const idx = (x + (y * this.width)) * this.colorChannels
+    const idx = (x + y * this.width) * this.colorChannels
     const data = this._imageData.data
-    return [
-      data[idx],
-      data[idx+1],
-      data[idx+2],
-      data[idx+3]
-    ]
+    return [data[idx], data[idx + 1], data[idx + 2], data[idx + 3]]
   }
   rgb(x, y) {
     const channels = this.at(x, y)
-    return pixelbutler.rgb(
-      channels[0],
-      channels[1],
-      channels[2]
-    )
+    return pixelbutler.rgb(channels[0], channels[1], channels[2])
   }
 }
 
@@ -54,95 +85,233 @@ PixelData.fromURL = function(url) {
         cnvs.height = img.height
         const cntxt = cnvs.getContext('2d')
         cntxt.drawImage(img, 0, 0)
-        const pxls = cntxt.getImageData(0,0,cnvs.width, cnvs.height)
+        const pxls = cntxt.getImageData(0, 0, cnvs.width, cnvs.height)
         resolve(new PixelData(pxls))
       }
-      img.crossOrigin = "Anonymous"
+      img.crossOrigin = 'Anonymous'
       img.src = url
-    } catch(e) {
+    } catch (e) {
       reject(e)
     }
   })
 }
 
 const transform = (points, transformer) => points.map(transformer)
-const identityTransformer = ([x,y]) => [x,y]
-const createScaleTransformer = (a,d=a) => ([x,y]) => [~~(a*x),~~(d*y)]
-const createShearTransformer = (b) => ([x,y]) => [~~(x+b*y), y]
-const createRotationTransformer = (theta) => {
+const identityTransformer = ([x, y]) => [x, y]
+const createScaleTransformer = (a, d = a) => ([x, y]) => [~~(a * x), ~~(d * y)]
+
+const createShearTransformer = b => ([x, y]) => [~~(x + b * y), y]
+// const createRotationTransformer = (theta) => {
+//   const cost = cos(theta)
+//   const sint = sin(theta)
+//   return ([x,y]) => {
+//     let tx = ~~(x*cost+y*-sint)
+//     let ty = ~~(x*sint + y*cost)
+//     return [tx >= 0 ? tx : 0, ty >= 0 ? ty : 0]
+//   }
+// }
+
+const createRotationTransformer = (origin, theta) => {
   const cost = cos(theta)
   const sint = sin(theta)
-  return ([x,y]) => {
-    let tx = ~~(x*cost+y*-sint)
-    let ty = ~~(x*sint + y*cost)
-    return [tx >= 0 ? tx : 0, ty >= 0 ? ty : 0]
+  return ([x, y]) => {
+    // translation
+    const mods = [origin[0] + Offset[0], origin[1] + Offset[1]]
+    const tx = x - mods[0]
+    const ty = y - mods[1]
+
+    //rotation
+    const rx = tx * cost - ty * sint
+    const ry = tx * sint + ty * cost
+
+    //translate back
+    const fx = ~~(rx + mods[0])
+    const fy = ~~(ry + mods[1])
+
+    return [fx, fy]
   }
 }
+
+const createProjection = (horizon, fov) => ([x, y]) => {
+  const p = [x, fov, y - horizon]
+  return [p[0] / p[2], p[1] / p[2]]
+}
+
+const createMoveTransformer = origin => ([x, y]) => [
+  x + origin[0],
+  y + origin[1]
+]
 
 let ctx
 let width
 let height
 let texture
 let pixels
+let projection
+let scale
+let rotate
+let move
 
 let points = []
 let transformed
-const magenta = pixelbutler.rgb(255,0,255)
+const magenta = pixelbutler.rgb(255, 0, 255)
 
 async function main() {
   const canvas = document.createElement('canvas')
-  canvas.width = RES.width
-  canvas.height = RES.height
+  canvas.width = REZ.width
+  canvas.height = REZ.height
   document.body.appendChild(canvas)
   ctx = new pixelbutler.Stage({
-    width: RES.width,
-    height: RES.height,
+    width: REZ.width,
+    height: REZ.height,
     canvas: canvas,
-    center: true
+    center: true,
+    scale: 'max'
   })
   width = ctx.width
   height = ctx.height
   pixels = await PixelData.fromURL(SRC)
 
-  for(let y = 0; y < 256; y++) {
-    for(let x = 0; x < 256; x++) {
+  for (let y = 0; y < REZ.height; y++) {
+    for (let x = 0; x < REZ.width; x++) {
       points.push([x, y])
     }
   }
 
   //transformed = transform(points, identityTransformer)
 
-
-
+  projection = createProjection(Horizon, FOV)
+  scale = createScaleTransformer(ZoomFactor)
+  rotate = createRotationTransformer(Offset, rad(Degrees))
+  move = createMoveTransformer(Origin)
   //raf(loop)
-  draw()
+  loop()
 }
 
 function draw() {
   //transformed = transform(points, createScaleTransformer(zoom))
   frameCount++
   //transformed = transform(points, createShearTransformer(sin(frameCount*0.1) * ShearFactor))
-  transformed = transform(points, createRotationTransformer(rad(frameCount)))
-  ctx.clear()
-  points.forEach((p,idx) => {
-    const [x,y] = transformed[idx]
-    const pixel = pixels.rgb(x,y)
-    ctx.setPixel(p[0], p[1], pixels.rgb(x,y))
+  ctx.clear(crayons.black)
+  points.forEach((p, idx) => {
+    const [x, y] = move(rotate(scale(p)))
+    if (x < 0 || y < 0) {
+      if (x > -4 || y > -4) {
+        ctx.setPixel(p[0], p[1], crayons.yellow)
+      }
+      ctx.setPixel(p[0], p[1], crayons.black)
+    } else {
+      const pixel = pixels.rgb(x, y)
+      ctx.setPixel(p[0], p[1], pixels.rgb(x, y))
+    }
   })
-  ctx.text(1,1,`ShearFactor: ${ShearFactor}`, magenta)
+  const rads = rad(Degrees) - SteeringMod
+  const halfCircle = rad(180)
+
+  ctx.fillCircle(Offset[0], Offset[1], 16, crayons.black)
+  ctx.drawCircle(Offset[0], Offset[1], 16, crayons.indigo)
+  ctx.fillCircle(
+    Offset[0] + sin(rads) * 12,
+    Offset[1] + cos(rads) * 12,
+    2,
+    crayons.cyan
+  )
+  ctx.text(Offset[0] - 4, Offset[1] - 2, deg(rads), crayons.magenta)
+
   ctx.render()
+  txfr = null
 }
 
-function scale(sx) {
-  ZoomFactor = sx
-  draw()
-}
+// function scale(sx) {
+//   ZoomFactor = sx
+//   draw()
+// }
 
 function loop() {
+  checkInput()
   draw()
   raf(loop)
 }
 
+function checkInput() {
+  // wasd to move/strafe
+  if (keys.isDown(W)) {
+    const rads = rad(Degrees)
+    Origin[0] += ~~((sin(rads + SteeringMod) - cos(rads + SteeringMod)) *
+      STEP_SPEED)
+    Origin[1] += ~~((sin(rads + SteeringMod) + cos(rads + SteeringMod)) *
+      STEP_SPEED)
 
+    move = null
+    move = createMoveTransformer(Origin)
+  } else if (keys.isDown(S)) {
+    // Origin[0] -= ~~((sin(Degrees) - cos(Degrees)) * STEP_SPEED)
+    // Origin[1] -= ~~((sin(Degrees) + cos(Degrees)) * STEP_SPEED)
+    Origin[1] += STEP_SPEED
+    move = null
+    move = createMoveTransformer(Origin)
+  }
+  if (keys.isDown(A)) {
+    Origin[0] -= STEP_SPEED; // ~~((sin(rad(Degrees)) - cos(rad(Degrees))) * STEP_SPEED)
+    //Origin[0] -= ~~((cos(rad(Degrees)) + sin(rad(Degrees))) * STEP_SPEED)
+    move = null
+    move = createMoveTransformer(Origin)
+  } else if (keys.isDown(D)) {
+    // Origin[1] += ~~((sin(rad(Degrees)) - cos(rad(Degrees))) * STEP_SPEED)
+    // Origin[0] += ~~((cos(rad(Degrees)) + sin(rad(Degrees))) * STEP_SPEED)
+    Origin[0] += STEP_SPEED
+    move = null
+    move = createMoveTransformer(Origin)
+  }
+
+  // control rotation with left/right
+  if (keys.isDown(RIGHT)) {
+    Degrees--
+    rotate = null
+    rotate = createRotationTransformer(Offset, rad(Degrees))
+  } else if (keys.isDown(LEFT)) {
+    Degrees++
+    rotate = null
+    rotate = createRotationTransformer(Offset, rad(Degrees))
+  }
+
+  // Control Horizon with up/down
+  if (keys.isDown(UP)) {
+    Horizon--
+    projection = null
+    projection = createProjection(Horizon, FOV)
+  } else if (keys.isDown(DOWN)) {
+    Horizon++
+    projection = null
+    projection = createProjection(Horizon, FOV)
+  }
+
+
+  if (keys.isDown(CLOSEBRACKET)) {
+    FOV += 1
+    projection = null
+    projection = createProjection(Horizon, FOV)
+  } else if (keys.isDown(OPENBRACKET)) {
+    FOV -= 1
+    projection = null
+    projection = createProjection(Horizon, FOV)
+  }
+
+  if (keys.isDown(EQUAL)) {
+    ZoomFactor -= 0.1
+    if (ZoomFactor <= 0) {
+      ZoomFactor = 0.1
+    }
+    console.log('ZoomFactor:', ZoomFactor)
+    scale = null
+
+    scale = createScaleTransformer(ZoomFactor)
+  } else if (keys.isDown(DASH)) {
+    ZoomFactor += 0.1
+    console.log('ZoomFactor:', ZoomFactor)
+    scale = null
+    scale = createScaleTransformer(ZoomFactor)
+  }
+}
 
 main()

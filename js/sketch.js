@@ -287,8 +287,8 @@ function checkInput() {
   // Control Horizon with up/down
   if (keys.isDown(UP)) {
     Horizon--
-    projection = null
-    projection = createProjection(Horizon, FOV)
+    project = null
+    project = createProjection(Horizon, FOV)
     console.log('Horizon:', Horizon)
   } else if (keys.isDown(DOWN)) {
     Horizon++

@@ -2,15 +2,14 @@ class KeytarHero {
   constructor(element = document) {
     this._downkeys = new Set();
     element.addEventListener('keydown', evt => {
-      console.log('adding key:', evt.keyCode);
       this._downkeys.add(evt.keyCode);
     });
     element.addEventListener('keyup', evt => {
-      console.log('removing key:', evt.keyCode);
+
       this._downkeys.delete(evt.keyCode);
     });
     window.addEventListener('blur', evt => {
-      console.log('removing all keys');
+
       this._downkeys.clear();
     });
   }

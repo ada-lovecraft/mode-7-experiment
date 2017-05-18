@@ -11,7 +11,7 @@ const {
 } = Math
 const TWO_PI = PI * 2
 const RADIANS = PI / 180
-const STEP_SPEED = 30
+const STEP_SPEED = 10
 const raf = window.requestAnimationFrame
 const rad = d => d * RADIANS
 const deg = r => r / RADIANS
@@ -25,8 +25,9 @@ const {
   A,
   S,
   D,
-  EQUAL,
-  DASH,
+  COMMA,
+  PERIOD,
+  P,
   OPENBRACKET,
   CLOSEBRACKET
 } = KeytarHero.Keys
@@ -42,6 +43,7 @@ var FOV = 100
 var Degrees = 90
 var SteeringMod = rad(-90)
 
+let PROJECT = true
 let frameCount = 0
 
 const crayons = {
@@ -151,6 +153,7 @@ let projection
 let scale
 let rotate
 let move
+let ptimeout = null
 
 let points = []
 let transformed
@@ -180,7 +183,7 @@ async function main() {
 
   //transformed = transform(points, identityTransformer)
 
-  projection = createProjection(Horizon, FOV)
+  project = createProjection(Horizon, FOV)
   scale = createScaleTransformer(ZoomFactor)
   rotate = createRotationTransformer(Offset, rad(Degrees))
   move = createMoveTransformer(Origin)
@@ -194,7 +197,13 @@ function draw() {
   //transformed = transform(points, createShearTransformer(sin(frameCount*0.1) * ShearFactor))
   ctx.clear(crayons.black)
   points.forEach((p, idx) => {
-    const [x, y] = move(rotate(scale(p)))
+    let tp
+    if(!!PROJECT) {
+      tp = scale(move(rotate(project(p))))
+    } else {
+      tp = scale(move(rotate(p)))
+    }
+    const [x, y] = tp
     if (x < 0 || y < 0) {
       if (x > -4 || y > -4) {
         ctx.setPixel(p[0], p[1], crayons.yellow)
@@ -280,38 +289,52 @@ function checkInput() {
     Horizon--
     projection = null
     projection = createProjection(Horizon, FOV)
+    console.log('Horizon:', Horizon)
   } else if (keys.isDown(DOWN)) {
     Horizon++
-    projection = null
-    projection = createProjection(Horizon, FOV)
+    project = null
+    project = createProjection(Horizon, FOV)
+    console.log('Horizon:', Horizon)
   }
 
 
   if (keys.isDown(CLOSEBRACKET)) {
     FOV += 1
-    projection = null
-    projection = createProjection(Horizon, FOV)
+    project = null
+    project = createProjection(Horizon, FOV)
+    console.log('FOV:', FOV)
   } else if (keys.isDown(OPENBRACKET)) {
     FOV -= 1
-    projection = null
-    projection = createProjection(Horizon, FOV)
+    project = null
+    project = createProjection(Horizon, FOV)
+    console.log('FOV:', FOV)
   }
 
-  if (keys.isDown(EQUAL)) {
+  if (keys.isDown(COMMA)) {
     ZoomFactor -= 0.1
     if (ZoomFactor <= 0) {
       ZoomFactor = 0.1
     }
     console.log('ZoomFactor:', ZoomFactor)
     scale = null
-
     scale = createScaleTransformer(ZoomFactor)
-  } else if (keys.isDown(DASH)) {
+  } else if (keys.isDown(PERIOD)) {
     ZoomFactor += 0.1
     console.log('ZoomFactor:', ZoomFactor)
     scale = null
     scale = createScaleTransformer(ZoomFactor)
   }
+  if (keys.isDown(P)) {
+    const nv = !PROJECT
+    if(ptimeout) {
+      cancelTimeout(ptimeout)
+    }
+    setTimeout(() => {
+      PROJECT = nv
+      console.log('Use Projection:', PROJECT)
+    }, 100)
+  }
+
 }
 
 main()

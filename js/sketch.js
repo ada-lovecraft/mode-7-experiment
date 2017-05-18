@@ -32,14 +32,14 @@ const {
   CLOSEBRACKET
 } = KeytarHero.Keys
 
-var ZoomFactor = 2.0
+var SCALING = 125.5
 var ShearFactor = 2
 var Origin = [2092, 264]
 
-var Offset = [REZ.width * 0.5, REZ.height * 0.5]
+var OFFSET = [REZ.width * 0.5, REZ.height * 0.5]
 
-var Horizon = 20
-var FOV = 100
+var HORIZON = 3
+var FOV = 167
 var Degrees = 90
 var SteeringMod = rad(-90)
 
@@ -118,7 +118,7 @@ const createRotationTransformer = (origin, theta) => {
   const sint = sin(theta)
   return ([x, y]) => {
     // translation
-    const mods = [origin[0] + Offset[0], origin[1] + Offset[1]]
+    const mods = [origin[0] + OFFSET[0], origin[1] + OFFSET[1]]
     const tx = x - mods[0]
     const ty = y - mods[1]
 
@@ -135,7 +135,7 @@ const createRotationTransformer = (origin, theta) => {
 }
 
 const createProjection = (horizon, fov) => ([x, y]) => {
-  const p = [x, fov, y - horizon]
+  const p = [x, fov, y + horizon]
   return [p[0] / p[2], p[1] / p[2]]
 }
 
@@ -143,6 +143,22 @@ const createMoveTransformer = origin => ([x, y]) => [
   x + origin[0],
   y + origin[1]
 ]
+
+const onepass = ([x,y]) => {
+  const rads = rad(Degrees)
+  const px = x;
+  const py = FOV;
+  const pz = y - HORIZON;
+
+     //projection
+  let sx = px / pz;
+  let sy = py / pz;
+
+  rx = sx * cos(rads) - sy * sin(rads);
+  ry = sx * sin(rads) + sy * cos(rads);
+
+  return [~~(rx * SCALING + Origin[0]), ~~(ry * SCALING + Origin[1])]
+}
 
 let ctx
 let width
@@ -183,9 +199,9 @@ async function main() {
 
   //transformed = transform(points, identityTransformer)
 
-  project = createProjection(Horizon, FOV)
-  scale = createScaleTransformer(ZoomFactor)
-  rotate = createRotationTransformer(Offset, rad(Degrees))
+  project = createProjection(HORIZON, FOV)
+  scale = createScaleTransformer(SCALING)
+  rotate = createRotationTransformer(OFFSET, rad(Degrees))
   move = createMoveTransformer(Origin)
   //raf(loop)
   loop()
@@ -197,17 +213,16 @@ function draw() {
   //transformed = transform(points, createShearTransformer(sin(frameCount*0.1) * ShearFactor))
   ctx.clear(crayons.black)
   points.forEach((p, idx) => {
-    let tp
-    if(!!PROJECT) {
-      tp = scale(move(rotate(project(p))))
-    } else {
-      tp = scale(move(rotate(p)))
-    }
-    const [x, y] = tp
-    if (x < 0 || y < 0) {
-      if (x > -4 || y > -4) {
-        ctx.setPixel(p[0], p[1], crayons.yellow)
-      }
+    // let tp
+    // if(!!PROJECT) {
+    //   tp = scale(move(rotate(project(p))))
+    // } else {
+    //   tp = scale(move(rotate(p)))
+    // }
+    // const [x, y] = tp
+    const [x,y] = onepass(p)
+    if (x < 0 || y < 0 || x > pixels.width || y > pixels.height ) {
+      //console.log('x,y outta range:', x, y)
       ctx.setPixel(p[0], p[1], crayons.black)
     } else {
       const pixel = pixels.rgb(x, y)
@@ -217,22 +232,21 @@ function draw() {
   const rads = rad(Degrees) - SteeringMod
   const halfCircle = rad(180)
 
-  ctx.fillCircle(Offset[0], Offset[1], 16, crayons.black)
-  ctx.drawCircle(Offset[0], Offset[1], 16, crayons.indigo)
+  ctx.fillCircle(OFFSET[0], OFFSET[1], 16, crayons.black)
+  ctx.drawCircle(OFFSET[0], OFFSET[1], 16, crayons.indigo)
   ctx.fillCircle(
-    Offset[0] + sin(rads) * 12,
-    Offset[1] + cos(rads) * 12,
+    OFFSET[0] + sin(rads) * 12,
+    OFFSET[1] + cos(rads) * 12,
     2,
     crayons.cyan
   )
-  ctx.text(Offset[0] - 4, Offset[1] - 2, deg(rads), crayons.magenta)
+  //ctx.text(OFFSET[0] - 4, OFFSET[1] - 2, deg(rads), crayons.magenta)
 
   ctx.render()
-  txfr = null
 }
 
 // function scale(sx) {
-//   ZoomFactor = sx
+//   SCALING = sx
 //   draw()
 // }
 
@@ -277,52 +291,52 @@ function checkInput() {
   if (keys.isDown(RIGHT)) {
     Degrees--
     rotate = null
-    rotate = createRotationTransformer(Offset, rad(Degrees))
+    rotate = createRotationTransformer(OFFSET, rad(Degrees))
   } else if (keys.isDown(LEFT)) {
     Degrees++
     rotate = null
-    rotate = createRotationTransformer(Offset, rad(Degrees))
+    rotate = createRotationTransformer(OFFSET, rad(Degrees))
   }
 
-  // Control Horizon with up/down
+  // Control HORIZON with up/down
   if (keys.isDown(UP)) {
-    Horizon--
+    HORIZON--
     project = null
-    project = createProjection(Horizon, FOV)
-    console.log('Horizon:', Horizon)
+    project = createProjection(HORIZON, FOV)
+    console.log('HORIZON:', HORIZON)
   } else if (keys.isDown(DOWN)) {
-    Horizon++
+    HORIZON++
     project = null
-    project = createProjection(Horizon, FOV)
-    console.log('Horizon:', Horizon)
+    project = createProjection(HORIZON, FOV)
+    console.log('HORIZON:', HORIZON)
   }
 
 
   if (keys.isDown(CLOSEBRACKET)) {
     FOV += 1
     project = null
-    project = createProjection(Horizon, FOV)
+    project = createProjection(HORIZON, FOV)
     console.log('FOV:', FOV)
   } else if (keys.isDown(OPENBRACKET)) {
     FOV -= 1
     project = null
-    project = createProjection(Horizon, FOV)
+    project = createProjection(HORIZON, FOV)
     console.log('FOV:', FOV)
   }
 
   if (keys.isDown(COMMA)) {
-    ZoomFactor -= 0.1
-    if (ZoomFactor <= 0) {
-      ZoomFactor = 0.1
+    SCALING -= 0.1
+    if (SCALING <= 0) {
+      SCALING = 0.1
     }
-    console.log('ZoomFactor:', ZoomFactor)
+    console.log('SCALING:', SCALING)
     scale = null
-    scale = createScaleTransformer(ZoomFactor)
+    scale = createScaleTransformer(SCALING)
   } else if (keys.isDown(PERIOD)) {
-    ZoomFactor += 0.1
-    console.log('ZoomFactor:', ZoomFactor)
+    SCALING += 0.1
+    console.log('SCALING:', SCALING)
     scale = null
-    scale = createScaleTransformer(ZoomFactor)
+    scale = createScaleTransformer(SCALING)
   }
   if (keys.isDown(P)) {
     const nv = !PROJECT
